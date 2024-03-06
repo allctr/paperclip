@@ -65,7 +65,9 @@ module Paperclip
       if url.respond_to?(:escape)
         url.escape
       else
-        URI.escape(url).gsub(escape_regex){|m| "%#{m.ord.to_s(16).upcase}" }
+        # Following the deprecation of URI.escape in ruby 3.2.1
+        @@default_uri_parser ||= URI::Parser.new
+        @@default_uri_parser.escape(url).gsub(escape_regex) { |m| "%#{m.ord.to_s(16).upcase}" }
       end
     end
 

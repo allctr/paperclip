@@ -1,6 +1,9 @@
 Paperclip
 =========
 
+# Maintained for Internal Use
+
+
 # Deprecated
 
 **[Paperclip is deprecated]**.
