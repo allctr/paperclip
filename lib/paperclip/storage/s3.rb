@@ -106,8 +106,11 @@ module Paperclip
     #   Redundancy Storage. RRS enables customers to reduce their
     #   costs by storing non-critical, reproducible data at lower
     #   levels of redundancy than Amazon S3's standard storage.
-    # * +use_accelerate_endpoint+: Use accelerate endpoint
-    #   http://docs.aws.amazon.com/AmazonS3/latest/dev/transfer-acceleration.html
+    # * +s3_tagging+: Used to apply tags on the object uploaded. This can be
+    #   a Hash or Array of Hashes where each hash has :key and :value.
+    #   If a string is given, it's passed directly on the Tagging
+    #   If a Proc is given, the response of evaluation needs to be the same as above.
+    #   https://docs.aws.amazon.com/sdk-for-ruby/v3/api/Aws/S3/Client.html#put_object_tagging-instance_method
     #
     #   You can set storage class on a per style bases by doing the following:
     #     :s3_storage_class => {
@@ -138,6 +141,7 @@ module Paperclip
           merge_s3_headers(@options[:s3_headers], @s3_headers, @s3_metadata)
 
           @s3_storage_class = set_storage_class(@options[:s3_storage_class])
+          @s3_tagging = @options[:s3_tagging] || {}
 
           @s3_server_side_encryption = "AES256"
           if @options[:s3_server_side_encryption].blank?
@@ -333,6 +337,26 @@ module Paperclip
         @s3_storage_class[style] || @s3_storage_class[:default]
       end
 
+      def s3_tagging
+        tag_set = @s3_tagging.is_a?(Proc) ? @s3_tagging.call(self) : @s3_tagging
+        if tag_set.is_a?(Hash)
+          tag_set.map { |k, v| "#{k}=#{v}" }.join(",").presence
+        elsif tag_set.is_a?(Array)
+          tag_set.map do |h|
+            if h.is_a?(Hash) && h[:key].present? && h[:value].present?
+              "#{h[:key]}=#{h[:value]}"
+            elsif h.respond_to?(:key) && h.respond_to?(:value) && h.key.present? && h.value.present?
+              "#{h.key}=#{h.value}"
+            else
+              log("ERROR: Invalid key in s3_tagging: #{h.inspect}")
+              nil
+            end
+          end.compact.join(",").presence
+        elsif tag_set.is_a?(String)
+          tag_set.presence
+        end
+      end
+
       def s3_protocol(style = default_style, with_colon = false)
         protocol = @s3_protocol
         protocol = protocol.call(style, self) if protocol.respond_to?(:call)
@@ -375,6 +399,8 @@ module Paperclip
 
             write_options[:metadata] = @s3_metadata unless @s3_metadata.empty?
             write_options.merge!(@s3_headers)
+
+            write_options.merge!(tagging: s3_tagging)
 
             s3_object(style).upload_file(file.path, write_options)
           rescue ::Aws::S3::Errors::NoSuchBucket
